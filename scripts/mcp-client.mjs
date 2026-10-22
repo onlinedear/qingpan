@@ -71,7 +71,8 @@ export class McpClient {
     if (!token) throw new McpError('缺少 MCP Token', { hint: HTTP_HINTS[401] });
     this.url = url;
     this.#token = token;
-    this.fetch = fetchImpl;
+    // 不能直接存 globalThis.fetch 再用 this.fetch() 调：Cloudflare Workers 会报 Illegal invocation
+    this.fetch = (...args) => fetchImpl(...args);
     this.timeoutMs = timeoutMs;
     this.sessionId = null;
     this.negotiated = null;

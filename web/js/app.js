@@ -3,7 +3,6 @@ import { plan, blindBox, swap, totals, walkKcal, weatherMood, SLOTS, SLOT_LABEL,
 import * as api from './api.js';
 import * as ch from './challenge.js';
 import { drawCard } from './share-card.js';
-import { DEMO_ITEMS, DEMO_STORE } from './demo-data.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -11,9 +10,10 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const state = {
   goal: { kcal: 600, protein: 25 },
   items: [],
-  demo: true,
+  live: false, // 已加载到真实门店菜单
+  stores: [],
   store: null,
-  origin: null, // 用户位置 "lng,lat"
+  origin: null, // 用户位置 "lng,lat"，只在内存里，不保存
   weather: null,
   plans: [],
   idx: 0,
@@ -151,6 +151,7 @@ const slotOf = (it) => (it.cat === 'dessert' ? 'side' : it.cat);
 
 function renderTray(mode, changedSlot) {
   const ol = $('#slots');
+  if (!state.live) return renderWaiting();
   const bySlot = Object.fromEntries(SLOTS.map((s) => [s, state.tray.find((i) => slotOf(i) === s) ?? null]));
   ol.innerHTML = SLOTS.map((s, i) => slotHtml(s, bySlot[s], i)).join('');
   for (const li of ol.children) {
@@ -161,11 +162,24 @@ function renderTray(mode, changedSlot) {
   setTimeout(() => ol.querySelectorAll('.flip').forEach((li) => li.classList.remove('flip')), 1400);
 }
 
+/** 还没有门店菜单时的托盘：骨架占位 + 一句引导，不放任何假餐品 */
+let waitingMsg = '正在定位，查找你附近的麦当劳…';
+let waitingAction = null; // { label, run }
+function renderWaiting(msg, action) {
+  if (msg !== undefined) { waitingMsg = msg; waitingAction = action ?? null; }
+  $('#slots').innerHTML = SLOTS.map((s, i) => `<li class="slot skeleton" style="--n:${i}" aria-hidden="true">
+      <div class="slot-ic">${ICON[s]}</div><div><div class="sk sk-a"></div><div class="sk sk-b"></div></div><div class="sk sk-c"></div></li>`).join('')
+    + `<li class="waiting" role="status"><p>${esc(waitingMsg)}</p>${waitingAction ? `<button class="solid" type="button" id="waitingBtn">${esc(waitingAction.label)}</button>` : ''}</li>`;
+  if (waitingAction) $('#waitingBtn').addEventListener('click', waitingAction.run);
+  $('#tray').classList.toggle('busy', !waitingAction);
+  renderLabel();
+}
+
 function renderLabel() {
   const t = totals(state.tray);
   const walk = state.walk.on ? state.walk.kcal : 0;
   $('#itemCount').textContent = `本餐 ${state.tray.length} 件`;
-  $('#dataTag').textContent = state.demo ? '示意数据' : '官方营养数据';
+  $('#dataTag').textContent = state.live ? '官方营养数据' : '等待门店菜单';
   odo($('#kcalTotal'), t.kcal);
   const dp = (v) => (Number.isInteger(v) ? 0 : 1);
   odo($('#proteinTotal'), t.protein, dp(t.protein));
@@ -181,13 +195,16 @@ function renderLabel() {
   ring.setAttribute('aria-label', `已用目标热量 ${pct}%`);
   $('#ringPct').textContent = String(pct);
   const left = state.goal.kcal - t.kcal;
-  $('#ringTxt').innerHTML = !state.tray.length
+  $('#ringTxt').innerHTML = !state.live
+    ? '找到门店后<br>从实时菜单里配餐'
+    : !state.tray.length
     ? '在这个目标下配不出来，<br>试试放宽热量或蛋白质'
     : `还剩 <b>${left}</b> 千卡余量${walk ? `<br>走着去再抵掉 ${walk} 千卡` : ''}<br>${t.protein >= state.goal.protein ? '蛋白质达标 ✓' : `蛋白质还差 ${(state.goal.protein - t.protein).toFixed(1)}g`}`;
-  $('#priceLine').innerHTML = t.price != null ? `参考价 <b>¥${t.price}</b>${state.demo ? '（示意）' : ''}` : '';
+  $('#priceLine').innerHTML = t.price != null ? `菜单价合计 <b>¥${t.price}</b>` : '';
 }
 
 function replan(mode = 'flip', seed) {
+  if (!state.live) return;
   state.plans = plan(state.items, state.goal, { weather: state.weather, seed, limit: 6 });
   state.idx = 0;
   const next = state.plans[0]?.tray ?? [];
@@ -201,7 +218,7 @@ function replan(mode = 'flip', seed) {
 let priceTimer;
 function verifyPrice() {
   clearTimeout(priceTimer);
-  if (state.demo || !state.tray.length) return;
+  if (!state.live || !state.store || !state.tray.length) return;
   priceTimer = setTimeout(async () => {
     const tray = state.tray;
     const p = await api.verifyPrice(state.store, tray);
@@ -209,7 +226,22 @@ function verifyPrice() {
     $('#priceLine').innerHTML = p.personal
       ? `你的到手价 <b>¥${p.price}</b> · 原价 ¥${p.original}`
       : `门店算价 <b>¥${p.original}</b>`;
+    loadCoupons(tray);
   }, 600);
+}
+
+// 当前门店可用券（个人模式才有）：展示这盘里用得上几张券，引导到 App 用券下单。
+// 纯展示，不替用户领券/下单。
+async function loadCoupons(tray) {
+  const line = $('#couponLine');
+  if (!line) return;
+  const { usable } = await api.storeCoupons(state.store, tray).catch(() => ({ usable: [] }));
+  if (tray !== state.tray) return; // 盘已经变了，丢弃过期结果
+  if (!usable.length) { line.hidden = true; line.textContent = ''; return; }
+  const names = usable.slice(0, 2).map((c) => c.title).join('、');
+  const more = usable.length > 2 ? ` 等 ${usable.length} 张` : '';
+  line.textContent = `🎟 这家店你有可用券：${names}${more}，到 麦当劳 App 下单时记得用上。`;
+  line.hidden = false;
 }
 
 // ---------- 换一件：按钮 + 左右滑动 ----------
@@ -264,6 +296,7 @@ slotsEl.addEventListener('pointercancel', endDrag);
 slotsEl.addEventListener('pointerleave', (e) => { if (drag && !drag.moved) endDrag(e); });
 
 $('#nextBtn').addEventListener('click', () => {
+  if (!state.live) return toast('先找到附近门店');
   if (state.plans.length < 2) return toast('在这个目标下只有这一种配法');
   state.idx = (state.idx + 1) % state.plans.length;
   state.tray = state.plans[state.idx].tray;
@@ -274,6 +307,7 @@ $('#nextBtn').addEventListener('click', () => {
 // ---------- 摇一摇盲盒 ----------
 const shakeBtn = $('#shakeBtn');
 function openBlindBox() {
+  if (!state.live) return toast('先找到附近门店，才能开盲盒');
   const p = blindBox(state.items, state.goal, { weather: state.weather, seed: (Math.random() * 2 ** 31) | 0 });
   if (!p) return toast('目标太紧了，盲盒里抽不出来');
   shakeBtn.classList.add('shaking');
@@ -319,76 +353,155 @@ const MOOD_COPY = {
   hot: { line: (w) => `${w.city} · ${w.text} ${w.temp}°`, lede: '天热，优先清爽和无糖的选择。' },
   mild: { line: (w) => `${w.city} · ${w.text} ${w.temp}°`, lede: '天气不错，适合走着去门店。' },
 };
-async function loadWeather(adcode) {
+async function loadWeather(location, cityName) {
+  const line = $('#weatherLine');
+  if (!location) { line.hidden = true; return; }
   try {
-    const w = await api.weather(adcode);
+    const w = await api.weather(location);
+    if (!w.city && cityName) w.city = cityName; // 天气源不返回城市名，用定位/地理编码拿到的城市补
     w.mood = weatherMood(w);
     state.weather = w;
     const copy = MOOD_COPY[w.mood] ?? MOOD_COPY.mild;
-    $('#weatherText').textContent = copy.line(w) + (w.demo ? '（示意）' : '');
+    $('#weatherText').textContent = copy.line(w);
     $('#lede').textContent = copy.lede;
+    line.hidden = false;
+    if (state.live) replan('swap'); // 天气会影响推荐，到了就重排一次
   } catch {
-    $('#weatherText').textContent = '天气暂时拿不到';
+    line.hidden = true; // 拿不到就不显示，不编天气
   }
 }
 
 // ---------- 门店与位置 ----------
-async function pickStore(address, city) {
+function setMode(st) {
+  const m = $('#mode');
+  const live = state.live;
+  m.textContent = live ? (st?.mine ? '我的 Token · 实时' : '实时数据') : (st?.mine ? '我的 Token' : '未连接');
+  m.classList.toggle('live', live && !st?.mine);
+  m.classList.toggle('mine', Boolean(st?.mine));
+  $('#keyBtn').classList.toggle('on', Boolean(st?.mine));
+}
+
+const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} 公里` : `${Math.round(m)} 米`);
+const askToken = { label: '填写我的 MCP Token', run: () => $('#keyBtn').click() };
+
+/** 处理"能力不可用"：给出对应引导，不回落假数据 */
+function handleUnavailable(e) {
+  if (e instanceof api.Unavailable && e.what === 'mcd') {
+    $('#storeLine').textContent = '需要麦当劳 MCP Token 才能查询门店和菜单';
+    renderWaiting('填写你在麦当劳开放平台申请的 MCP Token，就能看到附近门店的实时菜单。', askToken);
+    return true;
+  }
+  return false;
+}
+
+function renderStores() {
+  const ul = $('#stores');
+  if (state.stores.length < 2) { ul.hidden = true; ul.innerHTML = ''; return; }
+  ul.hidden = false;
+  ul.innerHTML = state.stores.map((s, i) => `<li><button type="button" class="store-chip" data-i="${i}" aria-pressed="${s === state.store}" ${s.open ? '' : 'data-closed'}>
+      <b>${esc(s.name.replace(/^麦当劳/, ''))}</b>
+      <span>${Number.isFinite(s.distance) ? fmtDist(s.distance) : ''}${s.hours ? ` · ${esc(s.hours)}` : ''}${s.open ? '' : ' · 暂停营业'}</span>
+    </button></li>`).join('');
+}
+$('#stores').addEventListener('click', (e) => {
+  const b = e.target.closest('.store-chip');
+  if (b) selectStore(state.stores[Number(b.dataset.i)]);
+});
+
+/** 搜附近门店并列出来，默认选最近一家营业中的 */
+async function findStores(keywords, city) {
+  state.lastQuery = { keywords, city };
   const line = $('#storeLine');
   line.textContent = '正在找附近的门店…';
+  renderWaiting('正在找附近的门店…');
   try {
-    const { stores, demo } = await api.findStores(address, city);
-    if (!stores.length) { line.textContent = '附近没找到门店，换个地址试试'; return; }
-    state.store = stores[0];
-    const dist = Number.isFinite(state.store.distance) ? ` · 约 ${fmtDist(state.store.distance)}` : '';
-    const hours = state.store.hours ? ` · ${state.store.hours}` : '';
-    const closed = state.store.open === false ? ' · <b>暂停营业</b>' : '';
-    line.innerHTML = `<b>${esc(state.store.name)}</b>${dist}${hours}${closed}${demo ? '（示意）' : ''}`;
-    const menu = await api.loadMenu(state.store);
-    state.items = menu.items;
-    state.demo = menu.demo;
-    $('#mode').textContent = state.demo ? '示意数据' : '实时数据';
-    $('#mode').classList.toggle('live', !state.demo);
-    renderNodata();
-    replan('flip');
-    if (!state.demo) {
-      const ok = state.items.filter(hasNutrition).length;
-      toast(`${state.store.name.replace(/^麦当劳/, '')}：${state.items.length} 款单品，${ok} 款有官方营养数据`);
+    state.stores = await api.findStores(keywords, city);
+    if (!state.stores.length) {
+      line.textContent = '附近没找到可到店的门店';
+      renderWaiting('附近没找到门店，换个更具体的地点试试，比如商场或地铁站名。');
+      return;
     }
-    loadWalk();
+    await selectStore(state.stores.find((s) => s.open) ?? state.stores[0]);
   } catch (e) {
+    if (handleUnavailable(e)) return;
     line.textContent = `门店查询失败：${e.message}`;
+    renderWaiting('门店暂时查不到，稍后再试，或换个地点。');
   }
 }
-const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} 公里` : `${Math.round(m)} 米`);
+
+async function selectStore(store) {
+  state.store = store;
+  renderStores();
+  const line = $('#storeLine');
+  const dist = Number.isFinite(store.distance) ? ` · 约 ${fmtDist(store.distance)}` : '';
+  const hours = store.hours ? ` · ${store.hours}` : '';
+  const closed = store.open === false ? ' · <b>暂停营业</b>' : '';
+  line.innerHTML = `<b>${esc(store.name)}</b>${dist}${hours}${closed}`;
+  renderWaiting(`正在读取${store.name.replace(/^麦当劳/, '')}的菜单…`);
+  try {
+    state.items = await api.loadMenu(store);
+    state.live = true;
+    $('#tray').classList.remove('busy');
+    setMode(await api.status());
+    renderNodata();
+    replan('flip');
+    const ok = state.items.filter(hasNutrition).length;
+    toast(`${store.name.replace(/^麦当劳/, '')}：${state.items.length} 款单品，${ok} 款有官方营养数据`);
+    loadWalk();
+  } catch (e) {
+    state.live = false;
+    if (handleUnavailable(e)) return;
+    renderWaiting(`菜单暂时读不到：${e.message}`);
+  }
+}
 
 $('#addrForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const address = $('#addr').value.trim();
-  if (!address) return toast('先输入一个地址');
+  if (!address) return toast('先输入一个地点，例如「上海市人民广场」');
   const geo = await api.geocode(address).catch(() => null);
-  if (geo) { state.origin = geo.location; loadWeather(geo.adcode); }
-  pickStore(address, geo?.city);
+  if (geo) { state.origin = geo.location; loadWeather(geo.location, geo.city); }
+  findStores([address], geo?.city);
 });
 
-$('#locBtn').addEventListener('click', () => {
-  if (!navigator.geolocation) return toast('这个浏览器不支持定位');
+/** 定位 → 逆地理编码得到城市和附近地标 → 搜门店。坐标只在内存里用，不保存 */
+function locate({ auto = false } = {}) {
+  if (!navigator.geolocation) {
+    $('#storeLine').textContent = '这个浏览器不支持定位，请输入地点';
+    renderWaiting('输入「城市 + 地点」，例如「上海市人民广场」，就能找到附近门店。');
+    return;
+  }
   const btn = $('#locBtn');
   btn.classList.add('busy');
-  // 只在点击后请求定位；坐标只用于本次查询，不保存
+  $('#storeLine').textContent = '正在定位…';
+  renderWaiting('正在定位，查找你附近的麦当劳…');
   navigator.geolocation.getCurrentPosition(async (pos) => {
     btn.classList.remove('busy');
     const { longitude: lng, latitude: lat } = pos.coords;
     state.origin = `${lng.toFixed(6)},${lat.toFixed(6)}`;
-    const re = await api.reverseGeocode(lng, lat).catch(() => null);
-    if (re?.formatted) $('#addr').value = re.formatted;
-    if (re?.adcode) loadWeather(re.adcode);
-    pickStore(re?.district || re?.formatted || $('#addr').value, re?.city);
+    let re;
+    try {
+      re = await api.reverseGeocode(lng, lat);
+    } catch (e) {
+      $('#storeLine').textContent = e instanceof api.Unavailable ? '站点暂不支持按定位找店，请输入地点' : `定位后识别地点失败：${e.message}`;
+      renderWaiting('输入「城市 + 地点」，例如「上海市人民广场」，就能找到附近门店。');
+      return;
+    }
+    if (re?.formatted) $('#addr').value = re.formatted.replace(/^.{2,6}?(省|自治区)/, '');
+    loadWeather(state.origin, re?.city);
+    findStores(re?.keywords?.length ? re.keywords : [re?.formatted], re?.city);
   }, (err) => {
     btn.classList.remove('busy');
-    toast(err.code === 1 ? '没有获得定位权限，可以手动输入地址' : '定位失败，请手动输入地址');
-  }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 });
-});
+    const denied = err.code === 1;
+    $('#storeLine').textContent = denied ? '没有获得定位权限' : '定位失败';
+    renderWaiting(
+      denied ? '没关系，在上面输入「城市 + 地点」也能找到附近门店；或在浏览器设置里允许定位后重试。' : '定位超时了，可以重试，或直接输入地点。',
+      { label: '重新定位', run: () => locate() },
+    );
+    if (!auto) toast(denied ? '没有获得定位权限，可以手动输入地点' : '定位失败，请手动输入地点');
+  }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+}
+$('#locBtn').addEventListener('click', () => locate());
 
 // ---------- 走着去 ----------
 function project(polyline, w = 320, h = 180, pad = 22) {
@@ -404,13 +517,20 @@ function project(polyline, w = 320, h = 180, pad = 22) {
 let walkerAnim;
 async function loadWalk() {
   const svg = $('#route');
+  const sec = $('#walk');
+  state.walk.kcal = 0;
+  // 只有真实的出发点和门店坐标都在时才显示，没有就整块隐藏，不画示意路线
+  if (!state.origin || !state.store) { sec.hidden = true; renderLabel(); return; }
   try {
-    const r = await api.walkRoute(state.origin, state.store?.location, state.store?.distance || 650);
+    const dest = await api.locateStore(state.store);
+    if (!dest) { sec.hidden = true; renderLabel(); return; }
+    const r = await api.walkRoute(state.origin, dest);
     const round = r.distance * 2;
     state.walk.distance = round;
     state.walk.kcal = walkKcal(round);
+    sec.hidden = false;
     odo($('#walkKcal'), state.walk.kcal);
-    $('#walkDesc').textContent = `往返约 ${fmtDist(round)}，步行 ${Math.round((r.duration * 2) / 60)} 分钟${r.demo ? '（示意路线）' : ''}。按 60 公斤体重估算，仅供参考。`;
+    $('#walkDesc').textContent = `往返约 ${fmtDist(round)}，步行 ${Math.round((r.duration * 2) / 60)} 分钟。按 60 公斤体重估算，仅供参考。`;
 
     const pts = project(r.polyline);
     if (!pts.length) return;
@@ -442,8 +562,9 @@ async function loadWalk() {
       walkerAnim = requestAnimationFrame(step);
     }
     renderLabel();
-  } catch (e) {
-    $('#walkDesc').textContent = `路线暂时算不出来：${e.message}`;
+  } catch {
+    sec.hidden = true; // 路线算不出来就不显示，不画假路线
+    renderLabel();
   }
 }
 $('#walkToggle').addEventListener('change', (e) => { state.walk.on = e.target.checked; renderLabel(); });
@@ -498,7 +619,6 @@ $('#shareBtn').addEventListener('click', () => {
     store: state.store?.name,
     date: new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
     streak: ch.streak(ch.load()),
-    demo: state.demo,
     walkKcal: state.walk.on ? state.walk.kcal : 0,
   });
   canvas.toBlob((b) => {
@@ -523,6 +643,72 @@ $('#saveBtn').addEventListener('click', async () => {
 });
 $('#shareSheet').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 
+// ---------- 用我自己的 Token ----------
+const keySheet = $('#keySheet');
+const keyInput = $('#keyInput');
+const keyErr = $('#keyErr');
+$('#keyBtn').addEventListener('click', () => {
+  keyInput.value = '';
+  keyInput.type = 'password';
+  $('#keyShow').textContent = '显示';
+  keyErr.textContent = '';
+  const has = Boolean(api.userToken.get());
+  $('#keyClear').hidden = !has;
+  // 已填写的 Token 不回显，只能替换或清除
+  keyInput.placeholder = has ? '已填写（不回显），粘贴新的可替换' : '粘贴你的 Token';
+  keySheet.showModal();
+  keyInput.focus();
+});
+$('#keyShow').addEventListener('click', (e) => {
+  const show = keyInput.type === 'password';
+  keyInput.type = show ? 'text' : 'password';
+  e.currentTarget.textContent = show ? '隐藏' : '显示';
+  e.currentTarget.setAttribute('aria-pressed', String(show));
+});
+$('#keyForm').addEventListener('submit', async (e) => {
+  if (e.submitter?.value !== 'save') return; // 取消按钮走默认关闭
+  e.preventDefault();
+  const t = keyInput.value.trim().replace(/^Bearer\s+/i, '');
+  if (!/^[A-Za-z0-9._~+/=-]{16,256}$/.test(t)) {
+    keyErr.textContent = 'Token 格式不对，请从控制台重新复制（不要带空格）';
+    return;
+  }
+  const btn = $('#keySave');
+  btn.disabled = true;
+  btn.textContent = '验证中…';
+  keyErr.textContent = '';
+  const prev = api.userToken.get();
+  api.userToken.set(t);
+  try {
+    await api.checkUserToken();
+    keyInput.value = '';
+    keySheet.close();
+    setMode(await api.status());
+    toast('Token 可用，已切换到你自己的账号查询');
+    const q = state.lastQuery;
+    if (q?.keywords) findStores(q.keywords, q.city);
+    else if ((await api.status()).amap) locate();
+    else $('#storeLine').textContent = '输入「城市 + 地点」，查看你附近门店的实时菜单';
+  } catch (err) {
+    api.userToken.set(prev);
+    keyErr.textContent = [400, 401, 502].includes(err.status) ? 'Token 无效或已过期，请去控制台重新生成' : `验证失败：${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '保存并刷新菜单';
+  }
+});
+$('#keyClear').addEventListener('click', async () => {
+  api.userToken.set('');
+  keySheet.close();
+  setMode(await api.status());
+  toast('已清除你的 Token');
+});
+keySheet.addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+addEventListener('qingpan:token-invalid', async () => {
+  setMode(await api.status());
+  toast('你的 Token 已失效，已清除，请重新填写');
+});
+
 // ---------- 暂无数据 ----------
 function renderNodata() {
   const miss = state.items.filter((i) => !hasNutrition(i));
@@ -533,17 +719,24 @@ function renderNodata() {
 // ---------- 启动 ----------
 (async function boot() {
   renderChallenge();
-  loadWeather(null);
-  // 首屏先用示意数据把托盘摆出来，用户输入地址或定位后再切实时数据
+  $('#weatherLine').hidden = true;
+  $('#walk').hidden = true;
+  renderWaiting('正在连接…');
   const st = await api.status();
-  if (st.mcd) $('#storeLine').textContent = '输入地址或点定位，换成你附近门店的实时菜单';
-  state.store = { ...DEMO_STORE };
-  state.items = DEMO_ITEMS;
-  state.demo = true;
-  if (!st.mcd) $('#storeLine').innerHTML = `<b>${esc(DEMO_STORE.name)}</b> · 约 ${fmtDist(DEMO_STORE.distance)}（示意）`;
-  renderNodata();
-  replan('flip');
-  loadWalk();
+  setMode(st);
+  // 没有任何可用的麦当劳 Token：引导访客填自己的，不显示假数据
+  if (!st.mcd) {
+    $('#storeLine').textContent = '需要麦当劳 MCP Token 才能查询门店和菜单';
+    renderWaiting('填写你在麦当劳开放平台申请的 MCP Token，就能看到附近门店的实时菜单。', askToken);
+    return;
+  }
+  // 能按坐标识别地点时，一打开就定位找附近门店；否则请用户输入地点
+  if (st.amap) locate({ auto: true });
+  else {
+    $('#storeLine').textContent = '输入「城市 + 地点」，查看你附近门店的实时菜单';
+    renderWaiting('在上面输入「城市 + 地点」，例如「上海市人民广场」，就能找到附近门店。');
+    $('#locBtn').hidden = true; // 站点没接腾讯地图时定位无法换算成地点
+  }
 })();
 
 export { state }; // 便于在控制台调试

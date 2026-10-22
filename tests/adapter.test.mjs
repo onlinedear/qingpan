@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { parseTable, parseNutrition, parseMeals, parseStores, parsePrice, matchNutrition, normName, categorize } from '../web/js/mcd-adapter.js';
+import { parseTable, parseNutrition, parseMeals, parseStores, parsePrice, matchNutrition, normName, categorize, parseStoreCoupons, couponsForTray } from '../web/js/mcd-adapter.js';
 import { plan } from '../web/js/planner.js';
 
 const NUT = {
@@ -110,4 +110,32 @@ test('真实采样：营养覆盖率与可配餐', { skip: !hasSamples && '本�
   const p = plan(items, { kcal: 600, protein: 25 });
   assert.ok(p.length > 0, '600 千卡 / 25g 蛋白质应能配出方案');
   assert.ok(p[0].totals.kcal <= 600 && p[0].totals.protein >= 25);
+});
+
+test('parseStoreCoupons：解析权威字段，去重、过滤无名券', () => {
+  const raw = { success: true, data: [
+    { couponId: 'C1', couponCode: 'K1', title: '麦辣鸡腿堡买一送一', promotionId: 'P1', tradeDateTime: '2026-10-01 00:00:00 - 2026-10-31 23:59:59', products: [{ productCode: '1406', productName: '板烧鸡腿堡' }] },
+    { couponId: 'C2', title: '全场满30减5', products: [] }, // 通用券
+    { couponId: 'C1', title: '重复券（同 id 去重）', products: [] },
+    { couponId: 'C3', products: [] }, // 无券名，丢弃
+  ] };
+  const cs = parseStoreCoupons(raw);
+  assert.equal(cs.length, 2);
+  assert.deepEqual(cs[0], { id: 'C1', code: 'K1', title: '麦辣鸡腿堡买一送一', products: ['1406'], validTill: '2026-10-01 00:00:00 - 2026-10-31 23:59:59' });
+  assert.equal(cs[1].title, '全场满30减5');
+  assert.deepEqual(cs[1].products, []);
+  assert.deepEqual(parseStoreCoupons({ data: [] }), []);
+  assert.deepEqual(parseStoreCoupons(null), []);
+});
+
+test('couponsForTray：通用券总命中，定向券按托盘商品 code 匹配', () => {
+  const cs = [
+    { id: 'C1', title: '板烧券', products: ['1406'] },
+    { id: 'C2', title: '通用券', products: [] },
+    { id: 'C3', title: '薯条券', products: ['f1'] },
+  ];
+  const tray = ['1406', 'c1']; // 盘里有板烧，没有薯条
+  const usable = couponsForTray(cs, tray);
+  assert.deepEqual(usable.map((c) => c.id), ['C1', 'C2']); // 板烧券命中 + 通用券；薯条券不命中
+  assert.deepEqual(couponsForTray(cs, []).map((c) => c.id), ['C2']); // 空盘只剩通用券
 });

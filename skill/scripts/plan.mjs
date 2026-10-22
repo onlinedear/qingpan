@@ -4,10 +4,11 @@
 //
 // 用法（在仓库根目录运行）：
 //   export MCD_MCP_TOKEN='你的 Token'
-//   node skill/scripts/plan.mjs --city 上海市 --keyword 人民广场 --kcal 600 --protein 25 [--budget 40] [--json]
+//   node skill/scripts/plan.mjs --where 江苏南京徐庄软件园 --kcal 600 --protein 25 [--budget 40] [--json]
+//   （或分开给：--city 上海市 --keyword 人民广场）
 
 import { McpClient, DEFAULT_URL } from '../../scripts/mcp-client.mjs';
-import { parseNutrition, parseMeals, parseStores, parsePrice } from '../../web/js/mcd-adapter.js';
+import { parseNutrition, parseMeals, parseStores, parsePrice, parseCity } from '../../web/js/mcd-adapter.js';
 import { plan, hasNutrition, SLOT_LABEL } from '../../web/js/planner.js';
 
 export function parseArgs(argv) {
@@ -16,6 +17,7 @@ export function parseArgs(argv) {
     const k = argv[i];
     const v = argv[i + 1];
     if (k === '--json') out.json = true;
+    else if (k === '--where') { out.where = v; i++; }
     else if (k === '--city') { out.city = v; i++; }
     else if (k === '--keyword') { out.keyword = v; i++; }
     else if (k === '--kcal') { out.kcal = Number(v); i++; }
@@ -32,14 +34,22 @@ const unwrap = (r) => {
 };
 
 export async function run(opts, { token = process.env.MCD_MCP_TOKEN, fetchImpl } = {}) {
-  if (!opts.city || !opts.keyword) throw new Error('需要 --city 和 --keyword，例如 --city 上海市 --keyword 人民广场');
+  // 一句话地点（--where 江苏南京徐庄软件园）优先：自动拆成城市 + 关键词；
+  // 没给 --where 时用显式的 --city/--keyword。
+  let { city, keyword } = opts;
+  if (opts.where && (!city || !keyword)) {
+    const p = parseCity(opts.where);
+    city = city || p.city;
+    keyword = keyword || p.keyword;
+  }
+  if (!city || !keyword) throw new Error('需要 --where 一句话地点（如 --where 江苏南京徐庄软件园），或 --city 上海市 --keyword 人民广场');
   if (!(opts.kcal > 0) || !(opts.protein >= 0)) throw new Error('--kcal 和 --protein 需要是正数');
   const c = new McpClient({ token, url: process.env.MCD_MCP_URL || DEFAULT_URL, fetchImpl });
   await c.initialize({ name: 'qingpan-skill', version: '0.1.0' });
 
-  const stores = parseStores(unwrap(await c.callTool('query-nearby-stores', { searchType: 2, city: opts.city, keyword: opts.keyword, beType: 1 })));
+  const stores = parseStores(unwrap(await c.callTool('query-nearby-stores', { searchType: 2, city, keyword, beType: 1 })));
   const store = stores.find((s) => s.open) ?? stores[0];
-  if (!store) throw new Error(`「${opts.city}${opts.keyword}」附近没找到可到店的门店`);
+  if (!store) throw new Error(`「${city}${keyword}」附近没找到可到店的门店`);
 
   const [mealsRaw, nutRaw] = await Promise.all([
     c.callTool('query-meals', { storeCode: store.code, beType: 1, orderType: 1 }).then(unwrap),

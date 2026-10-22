@@ -25,7 +25,7 @@ function fitText(ctx, text, maxW) {
 }
 
 /**
- * @param {{tray:{name:string,kcal?:number}[], totals:{kcal:number,protein:number,fat:number,carb:number,sodium:number}, goal:{kcal:number,protein:number}, store?:string, date?:string, streak?:number, demo?:boolean, walkKcal?:number}} d
+ * @param {{tray:{name:string,kcal?:number}[], totals:{kcal:number,protein:number,fat:number,carb:number,sodium:number}, goal:{kcal:number,protein:number}, store?:string, date?:string, streak?:number, walkKcal?:number}} d
  * @returns {HTMLCanvasElement}
  */
 export function drawCard(d, canvas = document.createElement('canvas')) {
@@ -100,7 +100,7 @@ export function drawCard(d, canvas = document.createElement('canvas')) {
   }
 
   ctx.font = `400 22px ${SANS}`; ctx.fillStyle = MUTED;
-  ctx.fillText(d.demo ? '示意数据 · 非真实营养值' : '数据来自麦当劳中国 MCP · 仅供饮食参考，不构成营养或医疗建议', 80, H - 70);
+  ctx.fillText('数据来自麦当劳中国 MCP · 仅供饮食参考，不构成营养或医疗建议', 80, H - 70);
   return canvas;
 }
 

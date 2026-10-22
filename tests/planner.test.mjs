@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { plan, blindBox, swap, totals, score, walkKcal, weatherMood, hasNutrition } from '../web/js/planner.js';
-import { DEMO_ITEMS } from '../web/js/demo-data.js';
+import { DEMO_ITEMS } from './fixtures/items.mjs';
 import * as ch from '../web/js/challenge.js';
 
 const goal = { kcal: 600, protein: 25 };

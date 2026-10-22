@@ -1,5 +1,4 @@
-// 示意数据：仅用于离线体验与界面演示，数值为虚构的近似值，不是麦当劳官方营养数据。
-// 接入真实 MCP 后，界面会改用门店实时菜单 + list-nutrition-foods 的官方数据。
+// 测试夹具：只给配餐引擎的单元测试用，网页里不会加载。数值为虚构的近似值，不是官方营养数据。
 export const DEMO = true;
 
 export const DEMO_STORE = { code: 'demo', name: '示意门店 · 人民广场店', address: '示意地址', distance: 650 };

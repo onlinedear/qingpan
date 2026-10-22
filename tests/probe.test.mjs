@@ -118,6 +118,17 @@ test('缺少 Token 直接报错', () => {
   assert.throws(() => new McpClient({}), McpError);
 });
 
+test('fetch 以独立函数调用（Cloudflare Workers 要求 this 不能是客户端对象）', async () => {
+  let seenThis = 'unset';
+  const strict = async function () {
+    seenThis = this;
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-06-18' } }), { headers: { 'content-type': 'application/json' } });
+  };
+  const c = new McpClient({ token: FAKE_TOKEN, fetchImpl: strict });
+  await c.request('initialize', {});
+  assert.ok(!(seenThis instanceof McpClient), 'fetch 不应以 McpClient 实例作为 this 被调用');
+});
+
 test('toMarkdown 生成表格并转义竖线', () => {
   const md = toMarkdown(
     [{ name: 'x', title: '', description: 'd', readOnly: false, params: [{ name: 'a', type: 'string', required: true, description: 'a|b' }] }],

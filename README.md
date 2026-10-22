@@ -16,7 +16,7 @@
 |---|---|
 | 托盘配餐 | 拖动热量、切换蛋白质档位，托盘实时重配；营养成分表数字逐位翻牌，热量环弹簧填充 |
 | 换一件 | 左右滑动卡片（或点箭头）换同类餐品，其余保持不变 |
-| 走着去 | 高德步行路线画出往返路径，估算能抵掉多少千卡并计入热量环 |
+| 走着去 | 腾讯步行路线画出往返路径，估算能抵掉多少千卡并计入热量环 |
 | 天气菜单 | 下雨降温优先热饮，高温优先清爽无糖，首屏文案随天气变化 |
 | 摇一摇盲盒 | 晃一晃手机，在目标内随机抽一盘，卡片依次翻转揭晓 |
 | 营养标签分享卡 | 一键生成营养成分表风格的海报，浏览器本地绘制 |
@@ -77,7 +77,7 @@ node skill/scripts/plan.mjs --city 上海市 --keyword 人民广场 --kcal 600 -
 
 ```bash
 npm test                     # 离线测试，不需要 Token、不连网
-npm run dev:static           # 纯静态预览（示意数据）http://127.0.0.1:8765
+npm run dev:static           # 纯静态预览界面（没有 /api，只能看布局）http://127.0.0.1:8765
 npx wrangler pages dev       # 带 /api 的完整预览，密钥写在 .dev.vars（已被 .gitignore 忽略）
 npx wrangler pages deploy    # 部署到 Cloudflare Pages
 ```
@@ -86,8 +86,11 @@ npx wrangler pages deploy    # 部署到 Cloudflare Pages
 
 | 变量 | 说明 |
 |---|---|
-| `MCD_MCP_TOKEN` | 麦当劳中国 MCP Token（体验模式；服务端只放行公共工具，个人权益不外泄） |
-| `AMAP_KEY` | 高德 Web 服务 Key（可选；不配时天气和步行路线使用示意数据） |
+| `MCD_MCP_TOKEN` | 麦当劳中国 MCP Token（可选；不配时访客需要在网页右上角填自己的 Token。服务端只放行公共工具，个人权益不外泄） |
+| `TMAP_WEB_KEY` | 腾讯地图 WebService Key（打开即定位找附近门店、步行路线都依赖它；不配时只能手动输入「城市 + 地点」） |
+| `TMAP_SK` | 腾讯地图 WebService 签名密钥（可选；控制台开了「签名校验」才需要） |
+
+网页不含任何示意数据：门店、菜单、营养、价格、天气、路线全部来自实时接口，拿不到就显示引导，不编造。
 
 ## 项目结构
 
@@ -95,7 +98,7 @@ npx wrangler pages deploy    # 部署到 Cloudflare Pages
 web/                 网页（纯原生 HTML/CSS/JS，无框架、无构建）
   js/mcd-adapter.js  麦当劳 MCP 返回结构解析（网页 / Skill / 测试共用）
   js/planner.js      配餐引擎（纯函数）
-functions/api/       Cloudflare Pages Functions：mcd 代理、高德代理、能力状态
+functions/api/       Cloudflare Pages Functions：mcd 代理、地图代理（腾讯 + open-meteo 天气）、能力状态
 skill/               Agent Skill（SKILL.md + 命令行脚本）
 scripts/             MCP 客户端、工具清单探测、返回结构采样
 tests/               48 项离线测试

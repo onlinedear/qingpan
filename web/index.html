@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#F4EFE4" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#171511" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='14' width='52' height='36' rx='9' fill='%231B1915'/%3E%3Crect x='14' y='22' width='36' height='4' rx='2' fill='%23F2B33D'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./css/app.css?v=4">
+  <link rel="stylesheet" href="./css/app.css?v=8">
 </head>
 <body>
   <a class="skip" href="#main">跳到主要内容</a>
@@ -16,7 +16,13 @@
   <header class="bar">
     <div class="brand" aria-label="轻盘">轻<span>·</span>盘</div>
     <div class="bar-right">
-      <span class="mode" id="mode" role="status">示意数据</span>
+      <span class="mode" id="mode" role="status">未连接</span>
+      <button class="icon-btn" id="keyBtn" type="button" aria-label="使用我自己的麦当劳 MCP Token" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg>
+      </button>
+      <a class="icon-btn" id="ghBtn" href="https://github.com/onlinedear/qingpan" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 上查看源码">
+        <svg class="gh-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      </a>
       <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色模式">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/></svg>
       </button>
@@ -25,7 +31,7 @@
 
   <main id="main">
     <section class="hero" aria-labelledby="h1">
-      <p class="eyebrow" id="weatherLine"><span class="dot"></span><span id="weatherText">正在看看外面的天气…</span></p>
+      <p class="eyebrow" id="weatherLine" hidden><span class="dot"></span><span id="weatherText"></span></p>
       <h1 id="h1">今天也能吃麦当劳，<br>只是<em>吃得更聪明</em>。</h1>
       <p class="lede" id="lede">设定目标，轻盘从附近门店的菜单里帮你配一盘刚刚好的。</p>
     </section>
@@ -58,13 +64,14 @@
           <button class="solid" type="submit">找门店</button>
         </form>
         <p class="store-line" id="storeLine" aria-live="polite"></p>
+        <ul class="stores" id="stores" hidden aria-label="附近门店"></ul>
       </div>
     </section>
 
     <section class="stage" aria-label="今天的托盘">
       <article class="label" id="label" aria-labelledby="labelTitle">
         <h2 id="labelTitle">营养成分</h2>
-        <div class="lrow thin"><span id="itemCount">本餐 0 件</span><span class="muted" id="dataTag">示意</span></div>
+        <div class="lrow thin"><span id="itemCount">本餐 0 件</span><span class="muted" id="dataTag">等待门店菜单</span></div>
         <div class="lrow big"><span>能量</span><b class="odo" id="kcalTotal" data-v="0"></b></div>
         <div class="lrow"><span>蛋白质</span><b><span class="odo" id="proteinTotal"></span> g</b></div>
         <div class="lrow"><span>脂肪</span><b><span class="odo" id="fatTotal"></span> g</b></div>
@@ -77,6 +84,7 @@
           <p class="ring-txt" id="ringTxt">还没开始配</p>
         </div>
         <p class="price-line" id="priceLine"></p>
+        <p class="coupon-line muted" id="couponLine" hidden></p>
       </article>
 
       <div class="tray-col">
@@ -103,7 +111,7 @@
         <p class="muted" id="walkDesc">选好门店后，算算走过去再走回来能抵掉多少。</p>
         <label class="switch"><input type="checkbox" id="walkToggle" checked><span></span>计入托盘</label>
       </div>
-      <svg class="route" id="route" viewBox="0 0 320 180" role="img" aria-label="步行路线示意">
+      <svg class="route" id="route" viewBox="0 0 320 180" role="img" aria-label="从你的位置到门店的步行路线">
         <path class="route-bg" d=""/>
         <path class="route-line" d=""/>
         <circle class="route-a" r="6"/>
@@ -130,8 +138,8 @@
   </main>
 
   <footer class="foot">
-    <p>数据来自麦当劳中国 MCP 与高德开放平台 · 仅供饮食参考，不构成营养或医疗建议 · 餐品、价格与供应以门店实时为准</p>
-    <p>麦当劳程序员节创意开发大赛参赛作品，由参赛者独立开发，非麦当劳官方产品</p>
+    <p>数据来自<a href="https://open.mcd.cn/mcp/" target="_blank" rel="noopener noreferrer">麦当劳中国 MCP 开放平台</a> · 仅供饮食参考，不构成营养或医疗建议 · 餐品、价格与供应以门店实时为准</p>
+    <p><a href="https://github.com/M-China/mcd-developer-innovation-challenge" target="_blank" rel="noopener noreferrer">麦当劳程序员节创意开发大赛</a>参赛作品，由参赛者独立开发，非麦当劳官方产品</p>
   </footer>
 
   <dialog class="sheet" id="shareSheet" aria-labelledby="shareTitle">
@@ -141,6 +149,33 @@
       <div class="sheet-actions">
         <button class="solid" type="button" id="saveBtn">保存图片</button>
         <button class="ghost" value="close">关闭</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="keySheet" aria-labelledby="keyTitle">
+    <form method="dialog" class="sheet-in key-in" id="keyForm">
+      <h2 id="keyTitle">用我自己的 Token</h2>
+      <p class="muted">填入你在麦当劳开放平台申请的 MCP Token，轻盘会用它查询你附近门店的实时菜单，算价也会按你自己的会员权益显示到手价。</p>
+      <ol class="key-steps">
+        <li>打开 <a href="https://open.mcd.cn/mcp" target="_blank" rel="noopener noreferrer">open.mcd.cn/mcp</a>，手机号登录</li>
+        <li>右上角「控制台」→「激活」，复制 Token</li>
+      </ol>
+      <label class="key-label" for="keyInput">MCP Token</label>
+      <div class="key-row">
+        <input id="keyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" placeholder="粘贴你的 Token" maxlength="256">
+        <button class="ghost" type="button" id="keyShow" aria-pressed="false" aria-label="显示 Token">显示</button>
+      </div>
+      <p class="key-err" id="keyErr" role="alert"></p>
+      <ul class="key-notes">
+        <li>只保存在这个浏览器标签页里，关掉标签页就清除</li>
+        <li>只经过本站服务器转发给麦当劳，不保存、不写日志</li>
+        <li>轻盘只做查询：不会下单、领券、兑换积分</li>
+      </ul>
+      <div class="sheet-actions">
+        <button class="solid" type="submit" id="keySave" value="save">保存并刷新菜单</button>
+        <button class="ghost" type="button" id="keyClear">清除</button>
+        <button class="ghost" value="close" formnovalidate>取消</button>
       </div>
     </form>
   </dialog>

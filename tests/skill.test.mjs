@@ -40,6 +40,18 @@ test('Skill 端到端：只调用只读工具，参数符合官方要求，输�
   assert.match(text, /不构成营养或医疗建议/);
 });
 
-test('缺城市或关键词时给出明确提示', async () => {
-  await assert.rejects(run({ kcal: 600, protein: 25 }, { token: 't', fetchImpl: fake().fetchImpl }), /--city/);
+test('parseArgs 支持 --where 一句话地点', () => {
+  assert.equal(parseArgs(['--where', '江苏南京徐庄软件园']).where, '江苏南京徐庄软件园');
+});
+
+test('--where 一句话地点自动拆成城市 + 关键词', async () => {
+  const { tools, fetchImpl } = fake();
+  await run({ where: '江苏南京徐庄软件园', kcal: 600, protein: 25, limit: 3 }, { token: 't', fetchImpl });
+  const q = tools.find((t) => t.name === 'query-nearby-stores').arguments;
+  assert.equal(q.city, '南京市');
+  assert.equal(q.keyword, '徐庄软件园');
+});
+
+test('缺地点时给出明确提示', async () => {
+  await assert.rejects(run({ kcal: 600, protein: 25 }, { token: 't', fetchImpl: fake().fetchImpl }), /--where|--city/);
 });

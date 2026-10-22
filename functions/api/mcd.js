@@ -23,14 +23,24 @@ const sessions = new Map();
 const cache = new Map();
 const CACHE_TTL = { 'list-nutrition-foods': 6 * 3600e3, 'campaign-calendar': 3600e3, 'query-meals': 600e3, 'query-meal-detail': 600e3, 'query-nearby-stores': 600e3 };
 
+/** 会话缓存键：完整 Token 的 SHA-256。不能只取尾部字符，否则两位访客的 Token 尾部相同时会串号 */
+export async function sessionKey(token) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** 访客 Token 只做格式校验，不落盘、不写日志 */
+export const validUserToken = (t) => /^[A-Za-z0-9._~+/=-]{16,256}$/.test(t);
+
 async function client(token, url, fetchImpl) {
-  const key = token.slice(-12);
+  const key = await sessionKey(token);
   const hit = sessions.get(key);
-  if (hit && Date.now() - hit.at < 10 * 60e3) return hit.c;
+  if (hit && Date.now() - hit.at < 10 * 60e3) return { c: hit.c, key };
   const c = new McpClient({ token, url, fetchImpl });
   await c.initialize({ name: 'qingpan-web', version: '0.1.0' });
   sessions.set(key, { c, at: Date.now() });
-  return c;
+  if (sessions.size > 200) sessions.delete(sessions.keys().next().value);
+  return { c, key };
 }
 
 /**
@@ -68,6 +78,7 @@ export async function handle(request, env, { fetchImpl } = {}) {
   const args = body?.args && typeof body.args === 'object' ? body.args : {};
 
   const userToken = request.headers.get('x-user-token')?.trim();
+  if (userToken && !validUserToken(userToken)) return json({ error: 'Token 格式不对，请从 open.mcd.cn/mcp 控制台重新复制' }, 400);
   const personal = Boolean(userToken);
   const allowed = PUBLIC_TOOLS.has(tool) || (personal && PERSONAL_TOOLS.has(tool));
   if (!allowed) {
@@ -75,7 +86,7 @@ export async function handle(request, env, { fetchImpl } = {}) {
   }
 
   const token = userToken || env.MCD_MCP_TOKEN;
-  if (!token) return json({ error: '站点还没有配置 MCP Token，当前只能使用示意数据', demo: true }, 503);
+  if (!token) return json({ error: '站点没有配置 MCP Token，请填写你自己的 Token', demo: true }, 503);
 
   // 只有站点 Token 的公共结果才缓存；个人 Token 的结果永不缓存
   const cacheKey = !personal && CACHE_TTL[tool] ? `${tool}:${JSON.stringify(args)}` : null;
@@ -85,15 +96,15 @@ export async function handle(request, env, { fetchImpl } = {}) {
   }
 
   try {
-    let c = await client(token, env.MCD_MCP_URL, fetchImpl);
+    let { c, key } = await client(token, env.MCD_MCP_URL, fetchImpl);
     let result;
     try {
       result = await c.callTool(tool, args);
     } catch (e) {
       // 会话过期时重新握手一次
       if (e instanceof McpError && (e.status === 404 || e.status === 400)) {
-        sessions.delete(token.slice(-12));
-        c = await client(token, env.MCD_MCP_URL, fetchImpl);
+        sessions.delete(key);
+        ({ c } = await client(token, env.MCD_MCP_URL, fetchImpl));
         result = await c.callTool(tool, args);
       } else throw e;
     }
