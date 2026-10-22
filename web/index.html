@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>轻盘 · 减脂期的麦当劳搭配</title>
+  <meta name="description" content="设定热量和蛋白质目标，从附近门店的实时菜单里配出一份达标的托盘。">
+  <meta name="theme-color" content="#F4EFE4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171511" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='14' width='52' height='36' rx='9' fill='%231B1915'/%3E%3Crect x='14' y='22' width='36' height='4' rx='2' fill='%23F2B33D'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./css/app.css?v=4">
+</head>
+<body>
+  <a class="skip" href="#main">跳到主要内容</a>
+
+  <header class="bar">
+    <div class="brand" aria-label="轻盘">轻<span>·</span>盘</div>
+    <div class="bar-right">
+      <span class="mode" id="mode" role="status">示意数据</span>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="切换深色模式">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="h1">
+      <p class="eyebrow" id="weatherLine"><span class="dot"></span><span id="weatherText">正在看看外面的天气…</span></p>
+      <h1 id="h1">今天也能吃麦当劳，<br>只是<em>吃得更聪明</em>。</h1>
+      <p class="lede" id="lede">设定目标，轻盘从附近门店的菜单里帮你配一盘刚刚好的。</p>
+    </section>
+
+    <section class="controls" aria-label="目标设置">
+      <div class="ctl">
+        <label for="kcal">这一餐的热量上限</label>
+        <div class="ctl-row">
+          <input id="kcal" type="range" min="350" max="900" step="10" value="600">
+          <output for="kcal" id="kcalOut" class="num">600</output><span class="unit">千卡</span>
+        </div>
+      </div>
+      <div class="ctl">
+        <span class="ctl-label" id="proteinLabel">蛋白质至少</span>
+        <div class="seg" role="radiogroup" aria-labelledby="proteinLabel" id="protein">
+          <button type="button" role="radio" aria-checked="false" data-v="15">15g</button>
+          <button type="button" role="radio" aria-checked="false" data-v="20">20g</button>
+          <button type="button" role="radio" aria-checked="true" data-v="25">25g</button>
+          <button type="button" role="radio" aria-checked="false" data-v="30">30g</button>
+          <i class="seg-thumb" aria-hidden="true"></i>
+        </div>
+      </div>
+      <div class="ctl ctl-store">
+        <label for="addr">在哪儿吃</label>
+        <form class="addr" id="addrForm">
+          <input id="addr" type="text" inputmode="search" autocomplete="street-address" placeholder="城市 + 地点，如 上海市人民广场" maxlength="60">
+          <button class="ghost" type="button" id="locBtn" aria-label="使用我的位置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>
+          </button>
+          <button class="solid" type="submit">找门店</button>
+        </form>
+        <p class="store-line" id="storeLine" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="stage" aria-label="今天的托盘">
+      <article class="label" id="label" aria-labelledby="labelTitle">
+        <h2 id="labelTitle">营养成分</h2>
+        <div class="lrow thin"><span id="itemCount">本餐 0 件</span><span class="muted" id="dataTag">示意</span></div>
+        <div class="lrow big"><span>能量</span><b class="odo" id="kcalTotal" data-v="0"></b></div>
+        <div class="lrow"><span>蛋白质</span><b><span class="odo" id="proteinTotal"></span> g</b></div>
+        <div class="lrow"><span>脂肪</span><b><span class="odo" id="fatTotal"></span> g</b></div>
+        <div class="lrow"><span>碳水化合物</span><b><span class="odo" id="carbTotal"></span> g</b></div>
+        <div class="lrow last"><span>钠</span><b><span class="odo" id="sodiumTotal"></span> mg</b></div>
+        <div class="ring-wrap">
+          <div class="ring" id="ring" role="img" aria-label="已用目标热量">
+            <span class="ring-num"><span id="ringPct">0</span><small>%</small></span>
+          </div>
+          <p class="ring-txt" id="ringTxt">还没开始配</p>
+        </div>
+        <p class="price-line" id="priceLine"></p>
+      </article>
+
+      <div class="tray-col">
+        <div class="tray" id="tray" data-pattern="plain">
+          <div class="tray-head"><span>你的托盘</span><span class="hint">左右滑动卡片，换一件</span></div>
+          <ol class="slots" id="slots" aria-live="polite"></ol>
+        </div>
+
+        <div class="actions">
+          <button class="solid big-btn" type="button" id="shakeBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M3 8v8M21 8v8"/></svg>
+            摇一摇，开盲盒
+          </button>
+          <button class="ghost" type="button" id="nextBtn">换一盘</button>
+          <button class="ghost" type="button" id="shareBtn">生成分享卡</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="walk" id="walk" aria-labelledby="walkTitle">
+      <div class="walk-text">
+        <h2 id="walkTitle">走着去</h2>
+        <p class="walk-big"><span class="num odo" id="walkKcal"></span><small> 千卡</small></p>
+        <p class="muted" id="walkDesc">选好门店后，算算走过去再走回来能抵掉多少。</p>
+        <label class="switch"><input type="checkbox" id="walkToggle" checked><span></span>计入托盘</label>
+      </div>
+      <svg class="route" id="route" viewBox="0 0 320 180" role="img" aria-label="步行路线示意">
+        <path class="route-bg" d=""/>
+        <path class="route-line" d=""/>
+        <circle class="route-a" r="6"/>
+        <circle class="route-b" r="8"/>
+        <circle class="route-walker" r="4"/>
+      </svg>
+    </section>
+
+    <section class="challenge" aria-labelledby="chTitle">
+      <div class="ch-head">
+        <h2 id="chTitle">7 天轻盘挑战</h2>
+        <button class="solid" type="button" id="checkBtn">今天就吃这盘</button>
+      </div>
+      <ol class="week" id="week"></ol>
+      <p class="muted" id="chTxt">连续打卡解锁新的托盘纸花纹。记录只存在这台设备的浏览器里。</p>
+      <div class="patterns" id="patterns" role="radiogroup" aria-label="托盘纸花纹"></div>
+    </section>
+
+    <section class="nodata" id="nodataSec" hidden aria-labelledby="ndTitle">
+      <h2 id="ndTitle">这些暂时配不进来</h2>
+      <p class="muted">官方营养数据里还没有它们，轻盘不猜数字。</p>
+      <ul id="nodataList"></ul>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>数据来自麦当劳中国 MCP 与高德开放平台 · 仅供饮食参考，不构成营养或医疗建议 · 餐品、价格与供应以门店实时为准</p>
+    <p>麦当劳程序员节创意开发大赛参赛作品，由参赛者独立开发，非麦当劳官方产品</p>
+  </footer>
+
+  <dialog class="sheet" id="shareSheet" aria-labelledby="shareTitle">
+    <form method="dialog" class="sheet-in">
+      <h2 id="shareTitle">今天的托盘</h2>
+      <img id="shareImg" alt="营养成分表风格的分享卡">
+      <div class="sheet-actions">
+        <button class="solid" type="button" id="saveBtn">保存图片</button>
+        <button class="ghost" value="close">关闭</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

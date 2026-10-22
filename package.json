@@ -1,0 +1,15 @@
+{
+  "name": "qingpan",
+  "version": "0.1.0",
+  "private": true,
+  "description": "轻盘 · 基于麦当劳中国 MCP 的减脂搭配网页应用与 Skill",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "probe": "node scripts/probe-tools.mjs",
+    "probe:smoke": "node scripts/probe-tools.mjs --smoke",
+    "probe:shapes": "node scripts/sample-shapes.mjs",
+    "dev:static": "python3 -m http.server 8765 --bind 127.0.0.1 --directory web",
+    "test": "node --test \"tests/*.test.mjs\""
+  }
+}

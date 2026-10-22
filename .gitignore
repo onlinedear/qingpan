@@ -1,0 +1,12 @@
+# 凭证：只放本机环境变量或 Cloudflare 后台，永远不进仓库
+.env
+.env.*
+!.env.example
+.dev.vars
+
+node_modules/
+.DS_Store
+.wrangler/
+
+# 探测原始结果先不入库，确认不含个人信息后再手动整理进 docs/
+probe/
